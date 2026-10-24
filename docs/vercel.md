@@ -9,7 +9,7 @@
 | Device **HTTP** universal ingest | Yes |
 | Dashboard polling (live metrics every few seconds) | Yes |
 | Postgres (Neon / Supabase / Vercel Postgres) | Yes |
-| Vercel Cron (stale devices) | Yes (Pro for custom crons; Hobby has limits) |
+| Vercel Cron (stale devices) | Yes — Hobby allows **1×/day**; Pro unlocks frequent schedules |
 | Persistent **WebSocket** server (`npm run realtime`) | **No** — not supported in serverless |
 | Always-on MQTT / Modbus sockets | **No** — use gateway / separate host |
 
@@ -81,13 +81,13 @@ Redeploy after saving env vars.
 
 ## 4. Cron (stale devices)
 
-`vercel.json` already schedules:
+`vercel.json` schedules a **daily** stale-device check (Hobby-compatible):
 
 ```json
-{ "path": "/api/v1/jobs/stale-check", "schedule": "*/5 * * * *" }
+{ "path": "/api/v1/jobs/stale-check", "schedule": "0 6 * * *" }
 ```
 
-The route expects:
+(`*/5 * * * *` needs Vercel Pro.) The route expects:
 
 ```http
 Authorization: Bearer <CRON_SECRET>
