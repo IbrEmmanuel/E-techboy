@@ -1,0 +1,22 @@
+[Unit]
+Description=EnergyMonitor Gateway Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=energymonitor
+WorkingDirectory=/opt/energymonitor/gateway
+EnvironmentFile=/etc/energymonitor/gateway.env
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/energymonitor/gateway/data
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

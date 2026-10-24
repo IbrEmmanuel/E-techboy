@@ -1,0 +1,15 @@
+{
+  "host": "192.168.1.50",
+  "port": 502,
+  "unitId": 1,
+  "pollIntervalMs": 5000,
+  "byteOrder": "BE",
+  "wordOrder": "AB",
+  "writeEnabled": false,
+  "registers": [
+    { "key": "voltage", "address": 0, "type": "uint16", "scale": 0.1, "unit": "V" },
+    { "key": "current", "address": 1, "type": "uint16", "scale": 0.01, "unit": "A" },
+    { "key": "active_power", "address": 2, "type": "uint32", "count": 2, "scale": 1, "unit": "W" },
+    { "key": "energy", "address": 4, "type": "uint32", "count": 2, "scale": 0.001, "unit": "kWh" }
+  ]
+}

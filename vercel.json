@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/v1/jobs/stale-check",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

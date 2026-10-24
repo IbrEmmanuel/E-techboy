@@ -1,0 +1,846 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum DeviceStatus {
+  PROVISIONING
+  ACTIVE
+  OFFLINE
+  REVOKED
+}
+
+enum MeasurementQuality {
+  GOOD
+  ESTIMATED
+  SUSPECT
+  INVALID
+}
+
+enum AlertType {
+  OVERVOLTAGE
+  UNDERVOLTAGE
+  OVERCURRENT
+  EXCESSIVE_POWER
+  HIGH_ENERGY
+  DEVICE_STALE
+  DEVICE_OFFLINE
+  INVALID_MEASUREMENT
+  CUSTOM
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum CommandStatus {
+  PENDING
+  ACKNOWLEDGED
+  EXPIRED
+  FAILED
+}
+
+enum EnergyMethod {
+  CUMULATIVE
+  INTEGRATED
+  MIXED
+}
+
+enum ProtocolKind {
+  MQTT
+  HTTP
+  WEBSOCKET
+  MODBUS_TCP
+  MODBUS_RTU
+  OPC_UA
+  BACNET_IP
+  LORAWAN
+  ZIGBEE
+  THREAD
+  BLE
+  CAN
+  VENDOR_API
+  CUSTOM
+}
+
+enum ProtocolCapabilityStatus {
+  IMPLEMENTED
+  GATEWAY_REQUIRED
+  STUB
+  PLANNED
+}
+
+enum DeviceCategory {
+  ESP32
+  ESP8266
+  RASPBERRY_PI
+  PLC
+  SMART_METER
+  POWER_ANALYZER
+  SOLAR_INVERTER
+  BMS
+  CHARGE_CONTROLLER
+  SMART_GRID
+  SENSOR
+  RELAY
+  ACTUATOR
+  IO_MODULE
+  GATEWAY
+  BMS_MESH
+  CUSTOM
+}
+
+enum ConnectionState {
+  UNKNOWN
+  CONNECTING
+  CONNECTED
+  DEGRADED
+  DISCONNECTED
+  ERROR
+  REVOKED
+}
+
+enum GatewayStatus {
+  PENDING
+  ONLINE
+  OFFLINE
+  REVOKED
+}
+
+enum AutomationKind {
+  MONITORING
+  ADVISORY
+  CONTROL
+}
+
+enum AutomationRunStatus {
+  SIMULATED
+  PENDING
+  APPROVED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+  EXPIRED
+}
+
+enum CommandApprovalState {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SubscriptionTier {
+  FREE_DEMO
+  IOT_STARTER
+  PROFESSIONAL
+  INDUSTRIAL
+  ENTERPRISE
+}
+
+enum MeasurementValueType {
+  NUMBER
+  BOOLEAN
+  ENUM
+  STRING
+}
+
+enum IntegrationKind {
+  MQTT_BROKER
+  HTTP_API
+  WEBHOOK
+  GATEWAY
+  VENDOR
+  CUSTOM
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  globalRole   Role     @default(OPERATOR)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  memberships             SiteMembership[]
+  organizationMemberships OrganizationMembership[]
+  preferences             UserPreference?
+  auditLogs               AuditLog[]
+  acknowledgements        AlertAcknowledgement[]
+  sessions                Session[]
+  automationApprovals     AutomationExecution[] @relation("AutomationApprover")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  ip        String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  memberships  OrganizationMembership[]
+  sites        Site[]
+  subscription Subscription?
+  integrations IntegrationConfig[]
+}
+
+model OrganizationMembership {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role     @default(VIEWER)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Site {
+  id             String   @id @default(cuid())
+  organizationId String?
+  name           String
+  timezone       String   @default("UTC")
+  currency       String   @default("USD")
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  memberships  SiteMembership[]
+  circuits     Circuit[]
+  devices      Device[]
+  gateways     Gateway[]
+  tariffs      Tariff[]
+  alerts       Alert[]
+  aggregates   EnergyAggregate[]
+  alertRules   AlertRule[]
+  commands     DeviceCommand[]
+  automations  AutomationRule[]
+  gridSnapshots GridSnapshot[]
+
+  @@index([organizationId])
+}
+
+model SiteMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  siteId    String
+  role      Role     @default(VIEWER)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, siteId])
+  @@index([siteId])
+}
+
+model Circuit {
+  id          String   @id @default(cuid())
+  siteId      String
+  name        String
+  description String?
+  phaseLabel  String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  site    Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  devices Device[]
+
+  @@index([siteId])
+}
+
+model DeviceModelProfile {
+  id           String         @id @default(cuid())
+  manufacturer String
+  model        String
+  category     DeviceCategory
+  protocol     ProtocolKind
+  description  String?
+  capabilities Json
+  registerMap  Json?
+  docsUrl      String?
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @db.Timestamptz(3)
+
+  devices Device[]
+
+  @@unique([manufacturer, model, protocol])
+  @@index([category])
+}
+
+model Gateway {
+  id                String        @id @default(cuid())
+  publicId          String        @unique
+  siteId            String
+  name              String
+  status            GatewayStatus @default(PENDING)
+  platform          String        @default("raspberry-pi")
+  agentVersion      String?
+  lastHeartbeatAt   DateTime?     @db.Timestamptz(3)
+  credentialHash    String
+  credentialVersion Int           @default(1)
+  credentialRevokedAt DateTime?   @db.Timestamptz(3)
+  metadata          Json?
+  createdAt         DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @db.Timestamptz(3)
+
+  site            Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  devices         Device[]
+  assignments     GatewayAssignment[]
+  connectionLogs  DeviceConnectionLog[]
+  healthReports   GatewayHealthReport[]
+
+  @@index([siteId])
+  @@index([status])
+  @@index([lastHeartbeatAt])
+}
+
+model GatewayAssignment {
+  id        String   @id @default(cuid())
+  gatewayId String
+  deviceId  String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  gateway Gateway @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([gatewayId, deviceId])
+  @@index([deviceId])
+}
+
+model GatewayHealthReport {
+  id         String   @id @default(cuid())
+  gatewayId  String
+  cpuPercent Float?
+  memPercent Float?
+  diskPercent Float?
+  uptimeSec  Int?
+  payload    Json?
+  reportedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  gateway Gateway @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayId, reportedAt])
+}
+
+model Device {
+  id                   String           @id @default(cuid())
+  publicId             String           @unique
+  name                 String
+  siteId               String
+  circuitId            String?
+  gatewayId            String?
+  profileId            String?
+  category             DeviceCategory   @default(ESP32)
+  protocol             ProtocolKind     @default(HTTP)
+  manufacturer         String?
+  model                String?
+  sensorModel          String           @default("PZEM-004T-V3")
+  firmwareVersion      String?
+  status               DeviceStatus     @default(PROVISIONING)
+  connectionState      ConnectionState  @default(UNKNOWN)
+  lastSeenAt           DateTime?        @db.Timestamptz(3)
+  lastSuccessfulAt     DateTime?        @db.Timestamptz(3)
+  lastEventId          String?
+  lastError            String?
+  credentialHash       String
+  credentialVersion    Int              @default(1)
+  credentialRevokedAt  DateTime?        @db.Timestamptz(3)
+  staleAfterSeconds    Int              @default(120)
+  writeEnabled         Boolean          @default(false)
+  demoMode             Boolean          @default(false)
+  capabilities         Json?
+  connectionConfigEnc  String?
+  metadata             Json?
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+
+  site              Site                   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  circuit           Circuit?               @relation(fields: [circuitId], references: [id], onDelete: SetNull)
+  gateway           Gateway?               @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  profile           DeviceModelProfile?    @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  readings          TelemetryReading[]
+  measurements      UniversalMeasurement[]
+  measurementDefs   MeasurementDefinition[]
+  events            DeviceEvent[]
+  alerts            Alert[]
+  commands          DeviceCommand[]
+  aggregates        EnergyAggregate[]
+  connectionLogs    DeviceConnectionLog[]
+  gatewayAssignments GatewayAssignment[]
+  protocolConfig    ProtocolConfiguration?
+  secrets           DeviceSecret[]
+
+  @@index([siteId])
+  @@index([status])
+  @@index([protocol])
+  @@index([category])
+  @@index([lastSeenAt])
+  @@index([gatewayId])
+}
+
+model ProtocolConfiguration {
+  id              String                    @id @default(cuid())
+  deviceId        String                    @unique
+  protocol        ProtocolKind
+  capabilityStatus ProtocolCapabilityStatus @default(IMPLEMENTED)
+  configJson      Json
+  validatedAt     DateTime?                 @db.Timestamptz(3)
+  lastTestAt      DateTime?                 @db.Timestamptz(3)
+  lastTestOk      Boolean?
+  lastTestMessage String?
+  createdAt       DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime                  @updatedAt @db.Timestamptz(3)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+}
+
+model DeviceSecret {
+  id            String   @id @default(cuid())
+  deviceId      String
+  keyName       String
+  ciphertext    String
+  iv            String
+  authTag       String
+  rotatedAt     DateTime @default(now()) @db.Timestamptz(3)
+  revokedAt     DateTime? @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, keyName])
+  @@index([deviceId])
+}
+
+model MeasurementDefinition {
+  id          String               @id @default(cuid())
+  deviceId    String
+  key         String
+  label       String
+  unit        String?
+  valueType   MeasurementValueType @default(NUMBER)
+  scale       Float                @default(1)
+  writable    Boolean              @default(false)
+  enumValues  Json?
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, key])
+  @@index([deviceId])
+}
+
+model UniversalMeasurement {
+  id             String               @id @default(cuid())
+  deviceId       String
+  eventId        String
+  protocol       ProtocolKind
+  recordedAt     DateTime             @db.Timestamptz(3)
+  receivedAt     DateTime             @default(now()) @db.Timestamptz(3)
+  schemaVersion  Int                  @default(1)
+  key            String
+  valueNumber    Float?
+  valueBool      Boolean?
+  valueText      String?
+  valueType      MeasurementValueType @default(NUMBER)
+  unit           String?
+  quality        MeasurementQuality   @default(GOOD)
+  simulated      Boolean              @default(false)
+  metadata       Json?
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, eventId, key])
+  @@index([deviceId, recordedAt])
+  @@index([deviceId, key, recordedAt])
+  @@index([recordedAt])
+}
+
+model DeviceConnectionLog {
+  id         String          @id @default(cuid())
+  deviceId   String?
+  gatewayId  String?
+  state      ConnectionState
+  message    String?
+  details    Json?
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+
+  device  Device?  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  gateway Gateway? @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, createdAt])
+  @@index([gatewayId, createdAt])
+}
+
+model AutomationRule {
+  id              String         @id @default(cuid())
+  siteId          String
+  name            String
+  kind            AutomationKind @default(MONITORING)
+  enabled         Boolean        @default(true)
+  dryRunDefault   Boolean        @default(true)
+  requireApproval Boolean        @default(false)
+  triggerJson     Json
+  conditionsJson  Json
+  actionsJson     Json
+  scheduleCron    String?
+  retryPolicyJson Json?
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+
+  site       Site                  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  executions AutomationExecution[]
+
+  @@index([siteId, enabled])
+}
+
+model AutomationExecution {
+  id           String              @id @default(cuid())
+  ruleId       String
+  status       AutomationRunStatus @default(PENDING)
+  dryRun       Boolean             @default(true)
+  triggerData  Json?
+  resultJson   Json?
+  errorMessage String?
+  approvedById String?
+  startedAt    DateTime            @default(now()) @db.Timestamptz(3)
+  finishedAt   DateTime?           @db.Timestamptz(3)
+
+  rule       AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  approvedBy User?          @relation("AutomationApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([ruleId, startedAt])
+  @@index([status])
+}
+
+model IntegrationConfig {
+  id             String         @id @default(cuid())
+  organizationId String?
+  siteId         String?
+  kind           IntegrationKind
+  name           String
+  enabled        Boolean        @default(true)
+  configJson     Json
+  statusMessage  String?
+  lastCheckedAt  DateTime?      @db.Timestamptz(3)
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([siteId])
+}
+
+model SubscriptionPlan {
+  id              String           @id @default(cuid())
+  tier            SubscriptionTier @unique
+  name            String
+  description     String?
+  priceMonthly    Decimal          @db.Decimal(12, 2)
+  currency        String           @default("NGN")
+  maxDevices      Int
+  maxSites        Int
+  maxGateways     Int
+  historyDays     Int
+  featuresJson    Json
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                   String           @id @default(cuid())
+  organizationId       String           @unique
+  planId               String
+  tier                 SubscriptionTier
+  status               String           @default("active")
+  paystackCustomerCode String?
+  paystackSubCode      String?
+  currentPeriodEnd     DateTime?        @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+}
+
+model GridSnapshot {
+  id              String   @id @default(cuid())
+  siteId          String
+  recordedAt      DateTime @db.Timestamptz(3)
+  voltageV        Float?
+  currentA        Float?
+  frequencyHz     Float?
+  activePowerW    Float?
+  powerFactor     Float?
+  importEnergyKwh Float?
+  exportEnergyKwh Float?
+  solarPowerW     Float?
+  batterySocPct   Float?
+  batteryPowerW   Float?
+  gridAvailable   Boolean?
+  inverterStatus  String?
+  peakDemandW     Float?
+  metadata        Json?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, recordedAt])
+}
+
+model TelemetryReading {
+  id                   String             @id @default(cuid())
+  deviceId             String
+  eventId              String
+  recordedAt           DateTime           @db.Timestamptz(3)
+  ingestedAt           DateTime           @default(now()) @db.Timestamptz(3)
+  schemaVersion        Int
+  voltageV             Decimal            @db.Decimal(10, 3)
+  currentA             Decimal            @db.Decimal(10, 4)
+  activePowerW         Decimal            @db.Decimal(12, 3)
+  powerFactor          Decimal            @db.Decimal(6, 4)
+  frequencyHz          Decimal            @db.Decimal(7, 3)
+  energyWh             Decimal            @db.Decimal(18, 3)
+  energyResetDetected  Boolean            @default(false)
+  quality              MeasurementQuality @default(GOOD)
+  simulated            Boolean            @default(false)
+  firmwareVersion      String?
+  sensorError          String?
+  units                Json
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, eventId])
+  @@index([deviceId, recordedAt])
+  @@index([recordedAt])
+  @@index([deviceId, ingestedAt])
+}
+
+model EnergyAggregate {
+  id            String       @id @default(cuid())
+  siteId        String
+  deviceId      String?
+  periodStart   DateTime     @db.Timestamptz(3)
+  periodEnd     DateTime     @db.Timestamptz(3)
+  grain         String
+  energyKwh     Decimal      @db.Decimal(18, 6)
+  peakPowerW    Decimal      @db.Decimal(12, 3)
+  avgPowerW     Decimal      @db.Decimal(12, 3)
+  costAmount    Decimal?     @db.Decimal(18, 4)
+  currency      String?
+  method        EnergyMethod
+  incomplete    Boolean      @default(false)
+  timezone      String
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+
+  site   Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, deviceId, grain, periodStart])
+  @@index([siteId, grain, periodStart])
+}
+
+model Tariff {
+  id            String   @id @default(cuid())
+  siteId        String
+  name          String
+  currency      String
+  ratePerKwh    Decimal  @db.Decimal(12, 6)
+  effectiveFrom DateTime @db.Timestamptz(3)
+  effectiveTo   DateTime? @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  site    Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  history TariffHistory[]
+
+  @@index([siteId, effectiveFrom])
+}
+
+model TariffHistory {
+  id            String   @id @default(cuid())
+  tariffId      String
+  ratePerKwh    Decimal  @db.Decimal(12, 6)
+  currency      String
+  effectiveFrom DateTime @db.Timestamptz(3)
+  effectiveTo   DateTime? @db.Timestamptz(3)
+  recordedAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  tariff Tariff @relation(fields: [tariffId], references: [id], onDelete: Cascade)
+
+  @@index([tariffId, effectiveFrom])
+}
+
+model AlertRule {
+  id                 String         @id @default(cuid())
+  siteId             String
+  name               String
+  type               AlertType
+  severity           AlertSeverity  @default(WARNING)
+  enabled            Boolean        @default(true)
+  voltageHighV       Decimal?       @db.Decimal(10, 3)
+  voltageLowV        Decimal?       @db.Decimal(10, 3)
+  currentHighA       Decimal?       @db.Decimal(10, 4)
+  powerHighW         Decimal?       @db.Decimal(12, 3)
+  energyHighKwh      Decimal?       @db.Decimal(18, 6)
+  hysteresisPercent  Decimal        @default(2) @db.Decimal(6, 3)
+  sustainSeconds     Int            @default(30)
+  cooldownSeconds    Int            @default(300)
+  createdAt          DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, enabled])
+}
+
+model Alert {
+  id               String         @id @default(cuid())
+  siteId           String
+  deviceId         String?
+  type             AlertType
+  severity         AlertSeverity
+  status           AlertStatus    @default(OPEN)
+  title            String
+  message          String
+  valueNumeric     Decimal?       @db.Decimal(18, 6)
+  unit             String?
+  openedAt         DateTime       @default(now()) @db.Timestamptz(3)
+  lastSeenAt       DateTime       @default(now()) @db.Timestamptz(3)
+  resolvedAt       DateTime?      @db.Timestamptz(3)
+  fingerprint      String
+
+  site             Site                   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  device           Device?                @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  acknowledgements AlertAcknowledgement[]
+
+  @@index([siteId, fingerprint, status])
+  @@index([siteId, openedAt])
+  @@index([deviceId, status])
+}
+
+model AlertAcknowledgement {
+  id          String   @id @default(cuid())
+  alertId     String
+  userId      String
+  note        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([alertId])
+}
+
+model DeviceEvent {
+  id        String   @id @default(cuid())
+  deviceId  String
+  type      String
+  payload   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, createdAt])
+}
+
+model DeviceCommand {
+  id            String               @id @default(cuid())
+  siteId        String
+  deviceId      String
+  type          String
+  payload       Json
+  status        CommandStatus        @default(PENDING)
+  approvalState CommandApprovalState @default(NOT_REQUIRED)
+  expiresAt     DateTime             @db.Timestamptz(3)
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  ackAt         DateTime?            @db.Timestamptz(3)
+  ackPayload    Json?
+  createdById   String?
+  ruleId        String?
+  auditNote     String?
+
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, status])
+  @@index([siteId, createdAt])
+}
+
+model UserPreference {
+  id                 String  @id @default(cuid())
+  userId             String  @unique
+  defaultSiteId      String?
+  theme              String  @default("system")
+  notifyEmail        Boolean @default(false)
+  livePollIntervalMs Int     @default(8000)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model RateLimitCounter {
+  key         String
+  windowStart DateTime @db.Timestamptz(3)
+  count       Int
+
+  @@id([key, windowStart])
+}
